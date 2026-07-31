@@ -20,14 +20,33 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 
 - macOS
 - Google Chrome の通常プロフィールで X にログイン済み
-- Node.js 22 以降
 - `security`
 - `sqlite3`
 - XChat PIN
 - X Web client で XChat PIN と公開鍵を設定済みであること
 - 送信先との既存の XChat conversation があること
 
-## Quick start
+Homebrew package と release archive には Node runtime が含まれるため、Node.js と npm は不要。
+
+この CLI は Chrome DevTools Protocol を使わない。`auth import` は local の Chrome Cookies database と macOS Keychain から必要な session cookie だけを読み取る。
+
+## Installation
+
+Homebrew:
+
+```bash
+brew install schroneko/tap/xchat-cli
+```
+
+直接 archive を使う場合は、[GitHub Releases](https://github.com/schroneko/xchat-cli/releases) から native architecture 用の `tar.gz` と `.sha256` を取得する。Apple Silicon は `arm64`、Intel Mac は `x64` を選ぶ。
+
+```bash
+shasum -a 256 -c xchat-cli-VERSION-darwin-ARCH.tar.gz.sha256
+tar -xzf xchat-cli-VERSION-darwin-ARCH.tar.gz
+./xchat-cli-VERSION-darwin-ARCH/bin/xchat --help
+```
+
+source から install する場合だけ Node.js 22 以降と npm が必要。
 
 ```bash
 git clone https://github.com/schroneko/xchat-cli.git
@@ -41,6 +60,8 @@ xchat keys status
 xchat keys unlock
 xchat conversations
 ```
+
+配布形式と release flow の詳細は [docs/distribution.md](docs/distribution.md) を参照。
 
 メッセージを読む:
 
