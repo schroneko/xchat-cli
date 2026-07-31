@@ -3,8 +3,8 @@
 ## 1. Install
 
 ```bash
-ghq get git@github.com:schroneko/xchat-cli.git
-cd "$(ghq root)/github.com/schroneko/xchat-cli"
+git clone https://github.com/schroneko/xchat-cli.git
+cd xchat-cli
 npm install
 npm link
 ```

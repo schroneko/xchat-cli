@@ -30,8 +30,8 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 ## Quick start
 
 ```bash
-ghq get git@github.com:schroneko/xchat-cli.git
-cd "$(ghq root)/github.com/schroneko/xchat-cli"
+git clone https://github.com/schroneko/xchat-cli.git
+cd xchat-cli
 npm install
 npm link
 xchat auth import
