@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Validate tag version
+        shell: bash
+        run: |
+          package_version="$(node -p 'require("./package.json").version')"
+          test "${GITHUB_REF_NAME#v}" = "$package_version"
+      - name: Build release archive
+        shell: bash
+        run: npm run release:build -- --version "${GITHUB_REF_NAME#v}" --output dist
+      - name: Smoke release archive
+        shell: bash
+        run: npm run release:smoke -- "dist/xchat-cli-${GITHUB_REF_NAME#v}-darwin-${{ matrix.architecture }}.tar.gz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.architecture }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.18.1
+          cache: npm
+      - name: Validate tag version
+        shell: bash
+        run: |
+          package_version="$(node -p 'require("./package.json").version')"
+          test "${GITHUB_REF_NAME#v}" = "$package_version"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            exit 0
+          fi
+          release_flags=(--title "$GITHUB_REF_NAME" --generate-notes --verify-tag)
+          if [[ "${GITHUB_REF_NAME#v}" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* "${release_flags[@]}"
