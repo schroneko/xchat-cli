@@ -1,9 +1,13 @@
+import { readFile } from "node:fs/promises";
 import { scrubSecretText } from "./redaction.js";
 
 const MAX_EVENT_COUNT = 1_000;
 const MAX_EVENT_CHARACTERS = 2 * 1024 * 1024;
 const MAX_EVENT_TOTAL_CHARACTERS = 16 * 1024 * 1024;
 const MAX_THRIFT_OPERATIONS = 1_000_000;
+const PRIVATE_KEY_BYTES = 32;
+
+let lowLevelChatModulePromise;
 
 export function normalizePublicKeys(payload) {
   const rows = payload?.data?.user_results_by_rest_ids;
@@ -88,18 +92,57 @@ export async function createUnlockedChat(options) {
     if (!registered) {
       throw new Error("Recovered XChat identity does not match a registered public key");
     }
-    chat.setIdentity(own.userId, registered.version);
-    chat.setCacheKeys(true);
-    chat.setSigningKeys(signingKeysFromPublicKeys(users));
-    return {
-      chat,
-      keyVersion: registered.version,
-      ownUserId: own.userId,
-      users,
-    };
+    return configureUnlockedChat(chat, own, registered, users);
   } catch (error) {
     chat.free?.();
     throw error;
+  }
+}
+
+export async function createImportedUnlockedChat(options) {
+  const users = Array.isArray(options.publicKeys)
+    ? options.publicKeys
+    : normalizePublicKeys(options.publicKeysResponse);
+  const own = users.find((user) => user.userId === String(options.ownUserId));
+  const keyMaterial = options.keyMaterial;
+  const identityKey = keyMaterial?.identityKey;
+  const signingKey = keyMaterial?.signingKey;
+  const version = String(keyMaterial?.version ?? "");
+  let combinedKeys;
+  let chat;
+
+  try {
+    if (!own || own.keys.length === 0) {
+      throw new Error("No registered XChat public key was found for this account");
+    }
+    if (
+      !(identityKey instanceof Uint8Array)
+      || !(signingKey instanceof Uint8Array)
+      || identityKey.byteLength !== PRIVATE_KEY_BYTES
+      || signingKey.byteLength !== PRIVATE_KEY_BYTES
+    ) {
+      throw new Error("Imported XChat private keys must each be exactly 32 bytes");
+    }
+    const registered = own.keys.find((key) => key.version === version);
+    if (!registered) {
+      throw new Error("Imported XChat key version is not registered for this account");
+    }
+    combinedKeys = Buffer.alloc(PRIVATE_KEY_BYTES * 2);
+    combinedKeys.set(identityKey, 0);
+    combinedKeys.set(signingKey, PRIVATE_KEY_BYTES);
+    chat = await (options.createChatImpl ?? createLowLevelChat)();
+    chat.importKeys(combinedKeys, version);
+    if (!chat.matchesRegisteredKey(registered.identityPublicKey)) {
+      throw new Error("Imported XChat identity does not match its registered public key");
+    }
+    return configureUnlockedChat(chat, own, registered, users);
+  } catch (error) {
+    chat?.free?.();
+    throw error;
+  } finally {
+    combinedKeys?.fill(0);
+    identityKey?.fill?.(0);
+    signingKey?.fill?.(0);
   }
 }
 
@@ -226,6 +269,7 @@ export function collectConversationTokens(encodedEvents) {
 
 function normalizeDecryptedMessage(message) {
   const event = message.event ?? {};
+  const content = event.content ?? {};
   return {
     id: stringOrNull(event.messageId ?? event.id),
     sequenceId: stringOrNull(event.sequenceId),
@@ -233,7 +277,14 @@ function normalizeDecryptedMessage(message) {
     senderId: stringOrNull(event.senderId),
     keyVersion: stringOrNull(event.keyVersion),
     type: event.type ?? "unknown",
-    text: event.content?.text ?? null,
+    contentType: content.content_type ?? content.contentType ?? null,
+    text: content.text ?? null,
+    targetMessageId: stringOrNull(
+      content.target_message_id ?? content.targetMessageId,
+    ),
+    newText: typeof (content.new_text ?? content.newText) === "string"
+      ? content.new_text ?? content.newText
+      : null,
     createdAtMsec: stringOrNull(event.createdAtMsec),
     verified: event.verified !== false,
     originalB64: message.originalB64,
@@ -243,6 +294,46 @@ function normalizeDecryptedMessage(message) {
 async function loadCreateChat() {
   const module = await import("@xdevplatform/chat-xdk");
   return module.createChat;
+}
+
+function configureUnlockedChat(chat, own, registered, users) {
+  chat.setIdentity(own.userId, registered.version);
+  chat.setCacheKeys(true);
+  chat.setSigningKeys(signingKeysFromPublicKeys(users));
+  return {
+    chat,
+    keyVersion: registered.version,
+    ownUserId: own.userId,
+    users,
+  };
+}
+
+async function createLowLevelChat() {
+  const module = await loadLowLevelChatModule();
+  return new module.Chat();
+}
+
+async function loadLowLevelChatModule() {
+  lowLevelChatModulePromise ??= initializeLowLevelChatModule();
+  return lowLevelChatModulePromise;
+}
+
+async function initializeLowLevelChatModule() {
+  if (typeof globalThis.crypto === "undefined") {
+    const { webcrypto } = await import("node:crypto");
+    globalThis.crypto = webcrypto;
+  }
+  const packageEntry = import.meta.resolve("@xdevplatform/chat-xdk");
+  const moduleUrl = new URL("./pkg/chat_xdk_wasm.js", packageEntry);
+  const wasmUrl = new URL("./chat_xdk_wasm_bg.wasm", moduleUrl);
+  const module = await import(moduleUrl.href);
+  const wasmBytes = await readFile(wasmUrl);
+  try {
+    await module.default({ module_or_path: wasmBytes });
+  } finally {
+    wasmBytes.fill(0);
+  }
+  return module;
 }
 
 function prepareJuiceboxConfiguration(tokenMap) {

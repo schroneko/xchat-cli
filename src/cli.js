@@ -105,18 +105,35 @@ export async function runCli(argv, dependencies = {}) {
 
   if (command === "read") {
     rejectPositionals(positionals);
-    rejectUnknownOptions(options, ["conversation", "to", "redact", "session", "max-pages"]);
+    rejectUnknownOptions(options, [
+      "conversation",
+      "to",
+      "redact",
+      "session",
+      "max-pages",
+      "chrome-chat-db",
+    ]);
     const target = parseTarget(options);
     const redactMessages = booleanOption(options, "redact");
+    const chromeChatDb = stringOption(options, "chrome-chat-db");
+    if (chromeChatDb !== undefined && chromeChatDb.length === 0) {
+      throw usageError("--chrome-chat-db requires a non-empty path");
+    }
+    rejectChromeKeyPinAmbiguity(chromeChatDb, env);
     const session = await resolveSession(sessionPath, dependencies);
-    const pin = await resolvePin({ env, dependencies });
-    const result = await readConversation({
+    const pin = chromeChatDb !== undefined
+      ? undefined
+      : await resolvePin({ env, dependencies });
+    const result = await (dependencies.readConversationImpl ?? readConversation)({
       client: createClient(session, dependencies),
       ownUserId: userIdFromSession(session),
       pin,
+      chromeChatDb,
       ...target,
       maxInboxPages: integerOption(options, "max-pages", 1, 20, 5),
       createChatImpl: dependencies.createChatImpl,
+      createImportedChatImpl: dependencies.createImportedChatImpl,
+      loadChromeChatKeysImpl: dependencies.loadChromeChatKeysImpl,
     });
     const safeResult = {
       ...result,
@@ -284,6 +301,15 @@ async function resolvePin({ env, dependencies }) {
     return dependencies.pinProvider();
   }
   return readHidden("XChat PIN: ");
+}
+
+function rejectChromeKeyPinAmbiguity(chromeChatDb, env) {
+  if (
+    chromeChatDb !== undefined
+    && (env.XCHAT_PIN !== undefined || env.XCHAT_PIN_FD !== undefined)
+  ) {
+    throw usageError("--chrome-chat-db cannot be combined with XCHAT_PIN or XCHAT_PIN_FD");
+  }
 }
 
 async function resolveMessageText(options, dependencies) {
@@ -500,12 +526,13 @@ Usage:
   xchat conversations [--max-pages N] [--session PATH]
   xchat keys status [--session PATH]
   xchat keys unlock [--session PATH]
-  xchat read (--conversation ID | --to HANDLE) [--redact] [--max-pages N] [--session PATH]
+  xchat read (--conversation ID | --to HANDLE) [--chrome-chat-db PATH] [--redact] [--max-pages N] [--session PATH]
   xchat send (--conversation ID | --to HANDLE) [--text TEXT] [--dry-run | --yes] [--max-pages N] [--session PATH]
 
 Authentication:
   auth import reads auth_token, ct0, and twid from a consistent Chrome database snapshot.
   XChat PIN is read without echo. XCHAT_PIN_FD is preferred for non-interactive use.
+  --chrome-chat-db is a read-only local key source for read; messages still come from api.x.com GraphQL.
 
 Safety:
   send asks for exact confirmation unless --yes is supplied.

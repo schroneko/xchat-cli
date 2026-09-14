@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createChat } from "@xdevplatform/chat-xdk";
-import { createUnlockedChat, decryptEventBatch } from "../src/xchat.js";
+import {
+  createImportedUnlockedChat,
+  createUnlockedChat,
+  decryptEventBatch,
+} from "../src/xchat.js";
 
 const PRIVATE_KEYS = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAg==";
 const IDENTITY_PUBLIC_KEY = "BGsX0fLhLEJH+Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/UfU=";
@@ -53,6 +57,44 @@ test("createUnlockedChat decrypts a real SDK fixture", async () => {
     assert.equal(message.senderId, "1111");
     assert.equal(message.verified, true);
     assert.deepEqual(result.errors, {});
+  } finally {
+    unlocked.chat.free();
+  }
+});
+
+test("createImportedUnlockedChat decrypts a real SDK fixture", async () => {
+  const privateKeys = Buffer.from(PRIVATE_KEYS, "base64");
+  const identityKey = Buffer.from(privateKeys.subarray(0, 32));
+  const signingKey = Buffer.from(privateKeys.subarray(32));
+  privateKeys.fill(0);
+  const unlocked = await createImportedUnlockedChat({
+    ownUserId: "1111",
+    keyMaterial: {
+      version: "1",
+      identityKey,
+      signingKey,
+    },
+    publicKeys: [{
+      userId: "1111",
+      keys: [{
+        version: "1",
+        identityPublicKey: IDENTITY_PUBLIC_KEY,
+        signingPublicKey: SIGNING_PUBLIC_KEY,
+        identityPublicKeySignature: IDENTITY_SIGNATURE,
+      }],
+    }],
+  });
+
+  try {
+    const result = decryptEventBatch(unlocked.chat, [KEY_CHANGE_EVENT, MESSAGE_EVENT]);
+    const message = result.messages.find((entry) => entry.text === "fixture event message");
+    assert.ok(message);
+    assert.equal(message.conversationId, "1111:2222");
+    assert.equal(message.senderId, "1111");
+    assert.equal(message.verified, true);
+    assert.deepEqual(result.errors, {});
+    assert.equal(identityKey.every((value) => value === 0), true);
+    assert.equal(signingKey.every((value) => value === 0), true);
   } finally {
     unlocked.chat.free();
   }

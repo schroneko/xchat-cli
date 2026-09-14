@@ -11,6 +11,7 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 - Chrome のログイン済み X session を取り込む
 - XChat の会話一覧を取得する
 - XChat PIN で既存メッセージを復号する
+- Chrome XChat backup database の local private key で既存メッセージを read-only 復号する
 - 既存の1対1会話または明示した group conversation に送信する
 - Web bundle から Bearer と一部の GraphQL query ID を検出する
 - credential、PIN、暗号 payload を出力から除外する
@@ -22,7 +23,7 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 - Google Chrome の通常プロフィールで X にログイン済み
 - `security`
 - `sqlite3`
-- XChat PIN
+- XChat PIN、または読み取り時に明示する Chrome XChat backup database
 - X Web client で XChat PIN と公開鍵を設定済みであること
 - 送信先との既存の XChat conversation があること
 
@@ -69,6 +70,14 @@ xchat conversations
 xchat read --to target_handle
 ```
 
+PIN を使わず、既存の Chrome XChat backup database から鍵だけを読み込む:
+
+```bash
+xchat read --to target_handle --chrome-chat-db "/path/to/xchat-backup.db"
+```
+
+`--chrome-chat-db` は read command 専用の read-only local key source。conversation history は database から読まず、引き続き `api.x.com` の内部 GraphQL API から取得する。
+
 送信前に対象だけを確認する:
 
 ```bash
@@ -93,6 +102,7 @@ xchat send --to target_handle
 - mutation は応答喪失時の重複実行を避けるため1回だけ送信する
 - response の conversation ID と message ID を request と照合する
 - Juicebox realm は HTTPS の `x.com` 配下だけを許可し、redirect を拒否する
+- `--chrome-chat-db` は current user 所有、group／other permission なし（例: mode `600`）、non-symlink の regular file だけを `/usr/bin/sqlite3` の read-only mode で開く
 - `--dry-run` は session、PIN、network、crypto に触れない
 
 ## 制限

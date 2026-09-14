@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   collectConversationTokens,
+  createImportedUnlockedChat,
   createUnlockedChat,
   encryptMessageVariables,
   extractMessageEventFields,
@@ -61,6 +62,44 @@ test("createUnlockedChat rejects non-X Juicebox realms", async () => {
       throw new Error("must not be called");
     },
   }), /not allowed/);
+});
+
+test("createImportedUnlockedChat imports identity then signing and configures the SDK", async () => {
+  const calls = [];
+  const identityKey = Buffer.alloc(32, 0x11);
+  const signingKey = Buffer.alloc(32, 0x22);
+  const fakeChat = {
+    importKeys: (keys, version) => calls.push(["import", Buffer.from(keys), version]),
+    matchesRegisteredKey: (key) => key === "identity-public",
+    setIdentity: (...args) => calls.push(["identity", ...args]),
+    setCacheKeys: (...args) => calls.push(["cache", ...args]),
+    setSigningKeys: (...args) => calls.push(["signing", ...args]),
+    free: () => calls.push(["free"]),
+  };
+
+  const result = await createImportedUnlockedChat({
+    publicKeysResponse: publicKeyResponse(),
+    ownUserId: "111",
+    keyMaterial: {
+      version: "7",
+      identityKey,
+      signingKey,
+    },
+    createChatImpl: async () => fakeChat,
+  });
+
+  assert.equal(result.keyVersion, "7");
+  assert.deepEqual(calls[0], [
+    "import",
+    Buffer.concat([Buffer.alloc(32, 0x11), Buffer.alloc(32, 0x22)]),
+    "7",
+  ]);
+  assert.deepEqual(calls[1], ["identity", "111", "7"]);
+  assert.deepEqual(calls[2], ["cache", true]);
+  assert.equal(calls[3][0], "signing");
+  assert.equal(identityKey.every((value) => value === 0), true);
+  assert.equal(signingKey.every((value) => value === 0), true);
+  calls[0][1].fill(0);
 });
 
 test("extractMessageEventFields reads conversation ID and token", () => {

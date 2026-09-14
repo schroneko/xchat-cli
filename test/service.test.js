@@ -1,11 +1,64 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyMessageEdits,
   fetchInbox,
   publicConversation,
   resolveConversation,
   validateSendMutationResponse,
 } from "../src/service.js";
+
+test("applyMessageEdits uses the final verified edit without losing unresolved edits", () => {
+  const messages = [
+    {
+      id: "message-id",
+      sequenceId: "100",
+      senderId: "111",
+      contentType: "text",
+      text: "108",
+      createdAtMsec: "1",
+      verified: true,
+    },
+    {
+      id: "edit-one",
+      sequenceId: "101",
+      senderId: "111",
+      contentType: "edit",
+      targetMessageId: "100",
+      newText: "1089",
+      createdAtMsec: "2",
+      verified: true,
+    },
+    {
+      id: "edit-two",
+      sequenceId: "102",
+      senderId: "111",
+      contentType: "edit",
+      targetMessageId: "100",
+      newText: "1089元\nGORO",
+      createdAtMsec: "3",
+      verified: true,
+    },
+    {
+      id: "unresolved",
+      sequenceId: "103",
+      senderId: "111",
+      contentType: "edit",
+      targetMessageId: "missing",
+      newText: "preserved",
+      createdAtMsec: "4",
+      verified: true,
+    },
+  ];
+
+  const result = applyMessageEdits(messages);
+
+  assert.equal(result.length, 2);
+  assert.equal(result[0].text, "1089元\nGORO");
+  assert.equal(result[0].editedAtMsec, "3");
+  assert.equal(result[1].id, "unresolved");
+  assert.equal(messages[0].text, "108");
+});
 
 test("fetchInbox normalizes internal response and paginates with cursor", async () => {
   const calls = [];

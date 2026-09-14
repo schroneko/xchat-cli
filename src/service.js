@@ -1,5 +1,7 @@
+import { loadChromeChatKeys } from "./chrome-chat-keys.js";
 import {
   collectConversationTokens,
+  createImportedUnlockedChat,
   createUnlockedChat,
   decryptEventBatch,
   encryptMessageVariables,
@@ -72,9 +74,9 @@ export async function readConversation(options) {
   const context = await loadConversationContext(options);
   try {
     const decrypted = decryptEventBatch(context.unlocked.chat, context.encodedEvents);
-    const messages = decrypted.messages
+    const messages = applyMessageEdits(decrypted.messages
       .filter((message) => message.conversationId === context.conversation.id)
-      .sort(compareMessages);
+      .sort(compareMessages));
     return {
       conversation: publicConversation(context.conversation),
       messages,
@@ -84,6 +86,43 @@ export async function readConversation(options) {
   } finally {
     context.unlocked.chat.free?.();
   }
+}
+
+export function applyMessageEdits(messages) {
+  const materialized = messages.map((message) => ({ ...message }));
+  const targets = new Map();
+  for (const message of materialized) {
+    if (message.contentType === "edit") {
+      continue;
+    }
+    if (message.id) {
+      targets.set(message.id, message);
+    }
+    if (message.sequenceId) {
+      targets.set(message.sequenceId, message);
+    }
+  }
+
+  const resolved = new Set();
+  for (const message of materialized) {
+    if (
+      message.contentType !== "edit"
+      || !message.verified
+      || !message.targetMessageId
+      || typeof message.newText !== "string"
+    ) {
+      continue;
+    }
+    const target = targets.get(message.targetMessageId);
+    if (!target || target.senderId !== message.senderId) {
+      continue;
+    }
+    target.text = message.newText;
+    target.editedAtMsec = message.createdAtMsec;
+    resolved.add(message);
+  }
+
+  return materialized.filter((message) => !resolved.has(message));
 }
 
 export async function sendMessage(options) {
@@ -247,13 +286,24 @@ async function loadConversationContext(options) {
     String(options.ownUserId),
     ...conversation.participants.map((participant) => participant.id),
   ].filter(Boolean))];
-  const publicKeysResponse = await fetchPublicKeys(options.client, participantIds);
-  const unlocked = await createUnlockedChat({
-    publicKeysResponse,
-    ownUserId: options.ownUserId,
-    pin: options.pin,
-    createChatImpl: options.createChatImpl,
+  const publicKeysResponse = await fetchPublicKeys(options.client, participantIds, {
+    includeJuiceboxTokens: !options.chromeChatDb,
   });
+  const unlocked = options.chromeChatDb
+    ? await createImportedUnlockedChat({
+      publicKeysResponse,
+      ownUserId: options.ownUserId,
+      keyMaterial: await (options.loadChromeChatKeysImpl ?? loadChromeChatKeys)(
+        options.chromeChatDb,
+      ),
+      createChatImpl: options.createImportedChatImpl,
+    })
+    : await createUnlockedChat({
+      publicKeysResponse,
+      ownUserId: options.ownUserId,
+      pin: options.pin,
+      createChatImpl: options.createChatImpl,
+    });
   const encodedEvents = [...new Set([
     ...conversation.encodedEvents,
     ...(page.missing_conversation_key_change_events ?? []),

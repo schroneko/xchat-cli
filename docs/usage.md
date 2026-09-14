@@ -110,6 +110,18 @@ xchat read --to target_handle --redact
 
 `read` は最新1ページの最大200 events を取得する。`--max-pages` は history のページ数ではなく、handle または conversation ID の解決に使う inbox のページ数。
 
+PIN を使わず、既存の Chrome XChat backup database から identity key と signing key だけを読み込む:
+
+```bash
+xchat read --to target_handle --chrome-chat-db "/path/to/xchat-backup.db"
+```
+
+`--chrome-chat-db` は read-only local key source であり、message や conversation history を database から取得しない。履歴は通常どおり `api.x.com` の内部 GraphQL API から取得し、local key で復号する。
+
+database は current user 所有、group／other permission なし、non-symlink の regular file でなければならない。CLI は最新の key version に対応する32 byte の identity private key と signing private key を `/usr/bin/sqlite3` の read-only mode で読み、登録済み public key と照合する。key bytes は出力も保存もせず、WASM import 後に process memory 上の buffer を消去する。
+
+`--chrome-chat-db` と `XCHAT_PIN` または `XCHAT_PIN_FD` は同時に指定できない。option を省略した場合の PIN 動作は変わらない。
+
 ## 6. Send safely
 
 dry-run は指定形式と文字数だけを検証し、target の存在は検証しない。session、PIN、network、crypto にも触れない:

@@ -7,7 +7,7 @@
     "xchat": "./bin/xchat-cli.js"
   },
   "scripts": {
-    "check": "node --check bin/xchat-cli.js && node --check src/auth.js && node --check src/cli.js && node --check src/redaction.js && node --check src/service.js && node --check src/x-api.js && node --check src/xchat.js && node --check scripts/build-release.mjs && node --check scripts/smoke-release.mjs && node --check test/chat-xdk-integration.test.js && node --check test/release.test.js",
+    "check": "node --check bin/xchat-cli.js && node --check src/auth.js && node --check src/chrome-chat-keys.js && node --check src/cli.js && node --check src/redaction.js && node --check src/service.js && node --check src/x-api.js && node --check src/xchat.js && node --check scripts/build-release.mjs && node --check scripts/smoke-release.mjs && node --check test/chat-xdk-integration.test.js && node --check test/chrome-chat-keys.test.js && node --check test/release.test.js",
     "release:build": "node scripts/build-release.mjs",
     "release:smoke": "node scripts/smoke-release.mjs",
     "test": "node --test",
