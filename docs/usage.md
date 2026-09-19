@@ -136,12 +136,18 @@ xchat send --to target_handle --text "hello" --dry-run
 xchat send --to target_handle
 ```
 
+PIN を入力せず、Chrome XChat backup database の鍵で送信する:
+
+```bash
+xchat send --to target_handle --text "hello" --chrome-chat-db "/path/to/xchat-backup.db" --yes
+```
+
 実送信の順序:
 
 1. 本文を prompt に入力
 2. 対象と文字数を確認
 3. `yes` を完全一致で入力
-4. XChat PIN を非表示で入力
+4. `--chrome-chat-db` を指定した場合は local key を読み込み、指定しない場合は XChat PIN を非表示で入力
 5. 既存会話と署名済み event を検証
 6. mutation を1回だけ実行
 7. response の conversation ID と message ID を照合

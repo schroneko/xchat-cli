@@ -11,7 +11,7 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 - Chrome のログイン済み X session を取り込む
 - XChat の会話一覧を取得する
 - XChat PIN で既存メッセージを復号する
-- Chrome XChat backup database の local private key で既存メッセージを read-only 復号する
+- Chrome XChat backup database の local private key で既存メッセージを復号し、送信にも使う
 - 既存の1対1会話または明示した group conversation に送信する
 - Web bundle から Bearer と一部の GraphQL query ID を検出する
 - credential、PIN、暗号 payload を出力から除外する
@@ -23,7 +23,7 @@ X のログイン済み Web session を使い、XChat の内部 GraphQL API と 
 - Google Chrome の通常プロフィールで X にログイン済み
 - `security`
 - `sqlite3`
-- XChat PIN、または読み取り時に明示する Chrome XChat backup database
+- XChat PIN、または明示する Chrome XChat backup database
 - X Web client で XChat PIN と公開鍵を設定済みであること
 - 送信先との既存の XChat conversation があること
 
@@ -76,7 +76,15 @@ PIN を使わず、既存の Chrome XChat backup database から鍵だけを読�
 xchat read --to target_handle --chrome-chat-db "/path/to/xchat-backup.db"
 ```
 
-`--chrome-chat-db` は read command 専用の read-only local key source。conversation history は database から読まず、引き続き `api.x.com` の内部 GraphQL API から取得する。
+`--chrome-chat-db` は read-only local key source。conversation history は database から読まず、引き続き `api.x.com` の内部 GraphQL API から取得する。
+
+送信時も同じ local key source を使うと、PIN 入力なしで送信できる:
+
+```bash
+xchat send --to target_handle --text "hello" --chrome-chat-db "/path/to/xchat-backup.db" --yes
+```
+
+`--chrome-chat-db` は read と send の read-only local key source。メッセージの取得と送信は引き続き `api.x.com` の内部 GraphQL API を使う。
 
 送信前に対象だけを確認する:
 

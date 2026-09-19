@@ -140,6 +140,91 @@ test("send rejects unknown options", async () => {
   }), /Unknown option/);
 });
 
+test("send routes --chrome-chat-db without requesting a PIN", async () => {
+  const output = memoryOutput();
+  const calls = [];
+  let captured;
+
+  await runCli([
+    "send",
+    "--conversation",
+    "111:222",
+    "--text",
+    "fixture",
+    "--chrome-chat-db",
+    "/fixture/chat.db",
+    "--yes",
+  ], {
+    stdout: output,
+    env: {},
+    loadSession: async () => ({ twid: "u=111" }),
+    clientFactory: () => ({ fixture: true }),
+    pinProvider: async () => {
+      calls.push("pin");
+      return "2580";
+    },
+    sendMessageImpl: async (options) => {
+      captured = options;
+      return {
+        ok: true,
+        conversationId: options.conversationId,
+        messageId: "message-id",
+      };
+    },
+  });
+
+  assert.deepEqual(calls, []);
+  assert.equal(captured.chromeChatDb, "/fixture/chat.db");
+  assert.equal(captured.pin, undefined);
+  assert.equal(captured.text, "fixture");
+  assert.deepEqual(JSON.parse(output.value), {
+    ok: true,
+    conversationId: "111:222",
+    messageId: "message-id",
+  });
+});
+
+test("send rejects --chrome-chat-db with either PIN environment variable", async () => {
+  for (const env of [
+    { XCHAT_PIN: "2580" },
+    { XCHAT_PIN_FD: "3" },
+  ]) {
+    let sessionCalls = 0;
+    await assert.rejects(runCli([
+      "send",
+      "--conversation",
+      "111:222",
+      "--text",
+      "fixture",
+      "--chrome-chat-db",
+      "/fixture/chat.db",
+      "--yes",
+    ], {
+      stdout: memoryOutput(),
+      env,
+      loadSession: async () => {
+        sessionCalls += 1;
+      },
+    }), /cannot be combined/);
+    assert.equal(sessionCalls, 0);
+  }
+});
+
+test("send rejects an empty --chrome-chat-db path", async () => {
+  await assert.rejects(runCli([
+    "send",
+    "--conversation",
+    "111:222",
+    "--text",
+    "fixture",
+    "--chrome-chat-db=",
+    "--yes",
+  ], {
+    stdout: memoryOutput(),
+    env: {},
+  }), /non-empty path/);
+});
+
 test("auth import routes explicit paths without exposing cookies", async () => {
   const output = memoryOutput();
   let captured;

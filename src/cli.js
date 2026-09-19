@@ -156,11 +156,17 @@ export async function runCli(argv, dependencies = {}) {
       "yes",
       "session",
       "max-pages",
+      "chrome-chat-db",
     ]);
     const target = parseTarget(options);
     const text = await resolveMessageText(options, dependencies);
     const dryRun = booleanOption(options, "dry-run");
     const yes = booleanOption(options, "yes");
+    const chromeChatDb = stringOption(options, "chrome-chat-db");
+    if (chromeChatDb !== undefined && chromeChatDb.length === 0) {
+      throw usageError("--chrome-chat-db requires a non-empty path");
+    }
+    rejectChromeKeyPinAmbiguity(chromeChatDb, env);
     if (dryRun && yes) {
       throw usageError("--dry-run and --yes cannot be used together");
     }
@@ -191,15 +197,20 @@ export async function runCli(argv, dependencies = {}) {
       }
     }
     const session = await resolveSession(sessionPath, dependencies);
-    const pin = await resolvePin({ env, dependencies });
-    const result = await sendMessage({
+    const pin = chromeChatDb !== undefined
+      ? undefined
+      : await resolvePin({ env, dependencies });
+    const result = await (dependencies.sendMessageImpl ?? sendMessage)({
       client: createClient(session, dependencies),
       ownUserId: userIdFromSession(session),
       pin,
+      chromeChatDb,
       text,
       ...target,
       maxInboxPages: integerOption(options, "max-pages", 1, 20, 5),
       createChatImpl: dependencies.createChatImpl,
+      createImportedChatImpl: dependencies.createImportedChatImpl,
+      loadChromeChatKeysImpl: dependencies.loadChromeChatKeysImpl,
     });
     writeJson(output, result);
     return;
@@ -527,12 +538,12 @@ Usage:
   xchat keys status [--session PATH]
   xchat keys unlock [--session PATH]
   xchat read (--conversation ID | --to HANDLE) [--chrome-chat-db PATH] [--redact] [--max-pages N] [--session PATH]
-  xchat send (--conversation ID | --to HANDLE) [--text TEXT] [--dry-run | --yes] [--max-pages N] [--session PATH]
+  xchat send (--conversation ID | --to HANDLE) [--text TEXT] [--chrome-chat-db PATH] [--dry-run | --yes] [--max-pages N] [--session PATH]
 
 Authentication:
   auth import reads auth_token, ct0, and twid from a consistent Chrome database snapshot.
   XChat PIN is read without echo. XCHAT_PIN_FD is preferred for non-interactive use.
-  --chrome-chat-db is a read-only local key source for read; messages still come from api.x.com GraphQL.
+  --chrome-chat-db is a read-only local key source for read and send; messages still come from api.x.com GraphQL.
 
 Safety:
   send asks for exact confirmation unless --yes is supplied.
